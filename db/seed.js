@@ -49,7 +49,7 @@ async function createInitialUsers() {
     });
 
     const glamgal = await createUser({
-      userName: "glamgal",
+      username: "glamgal",
       password: "soglam",
     });
 
