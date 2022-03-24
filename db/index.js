@@ -1,4 +1,5 @@
 const { Client } = require("pg"); // imports the pg module
+const { user } = require("pg/lib/defaults");
 const client = new Client("postgres://localhost:5432/juicebox-dev");
 
 async function getAllUsers() {
@@ -13,8 +14,8 @@ async function getAllUsers() {
 
 async function getAllPosts() {
   const { rows } = await client.query(
-    `SELECT id, authorID, title, content, active 
-        FROM users;
+    `SELECT id, "authorId", title, content, active 
+        FROM posts;
       `
   );
 
@@ -41,17 +42,16 @@ async function createUser({ username, password, name, location }) {
   }
 }
 
-async function createPost({ authorID, title, content }) {
+async function createPost({ authorId, title, content }) {
   try {
     const {
       rows: [post],
     } = await client.query(
       `
-          INSERT INTO users(authorID, title, content)
-        VALUES ($1, $2, $3)
-        RETURNING *;
+          INSERT INTO posts("authorId", title, content)
+        VALUES ($1, $2, $3);
       `,
-      [authorID, title, content]
+      [authorId, title, content]
     );
 
     return post;
@@ -70,7 +70,6 @@ async function updateUser(id, fields = {}) {
   if (setString.length === 0) {
     return;
   }
-
   try {
     const {
       rows: [user],
@@ -90,7 +89,7 @@ async function updateUser(id, fields = {}) {
   }
 }
 
-async function updatePost(id, { title, content, active }) {
+async function updatePost(id, fields = {}) {
   // build the set string
   const setString = Object.keys(fields)
     .map((key, index) => `"${key}"=$${index + 1}`)
@@ -106,11 +105,11 @@ async function updatePost(id, { title, content, active }) {
       rows: [post],
     } = await client.query(
       `
-          UPDATE posts
-          SET ${setString}
-          WHERE id=${id}
-          RETURNING *;
-        `,
+      UPDATE posts
+      SET ${setString}
+      WHERE id=${id}
+      RETURNING *;
+    `,
       Object.values(fields)
     );
 
@@ -122,7 +121,7 @@ async function updatePost(id, { title, content, active }) {
 
 async function getPostsByUser(userId) {
   try {
-    const { rows } = client.query(`
+    const { rows } = await client.query(`
         SELECT * FROM posts
         WHERE "authorId"=${userId};
       `);
@@ -134,16 +133,52 @@ async function getPostsByUser(userId) {
 }
 
 async function getUserById(userId) {
-  // first get the user (NOTE: Remember the query returns
-  // (1) an object that contains
-  // (2) a `rows` array that (in this case) will contain
-  // (3) one object, which is our user.
-  // if it doesn't exist (if there are no `rows` or `rows.length`), return null
-  // if it does:
-  // delete the 'password' key from the returned object
-  // get their posts (use getPostsByUser)
-  // then add the posts to the user object with key 'posts'
-  // return the user object
+  try {
+    const {
+      rows: [user],
+    } = await client.query(`
+    SELECT * FROM users
+    WHERE id = ${userId};
+  `);
+    if (!user) {
+      return null;
+    }
+    delete user.password;
+    user.posts = await getPostsByUser(userId);
+    console.log(user, "...checking for getUserByID");
+    return user;
+  } catch (error) {
+    throw error;
+  }
+}
+
+async function createTags(tagList = ["corn", "dinosaurs", "pizza"]) {
+  // if (tagList.length === 0) {
+  //   return;
+  // }
+
+  // need something like: $1), ($2), ($3 )
+  const insertValues = tagList.map((_, index) => `$${index + 1}`).join("), (");
+  // then we can use: (${ insertValues }) in our string template
+
+  // need something like $1, $2, $3
+  const selectValues = tagList.map((_, index) => `$${index + 1}`).join(", ");
+  // then we can use (${ selectValues }) in our string template
+
+  try {
+    `
+    INSERT INTO tags(${insertValues}, )
+    VALUES ${selectValues};
+    ON CONFLICT (insertValues) DO NOTHING
+    RETURNING *;
+    `;
+    // insert the tags, doing nothing on conflict
+    // returning nothing, we'll query after
+    // select all tags where the name is in our taglist
+    // return the rows from the query
+  } catch (error) {
+    throw error;
+  }
 }
 
 module.exports = {
@@ -155,4 +190,6 @@ module.exports = {
   updatePost,
   getAllPosts,
   getPostsByUser,
+  getUserById,
+  createTags,
 };
